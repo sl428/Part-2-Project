@@ -1,39 +1,24 @@
 """
-vibfreq.py - Hessian, mass-weighted Hessian and vibrational frequencies.
+vibfreq.py - vibrational frequencies from the fairchem Hessian.
 
 Workflow
-  1. Solve Cartesian Hessian H
-  2. Mass-weight
-  3. Project out the 3 translations + 3 rotations (2 for linear molecules)
-  4. Diagonalise H_mw; eigenvalues -> frequencies in cm^-1
+  1. Cartesian Hessian H from fairchem (exact, via autograd), mass-weighted
+  2. Remove the 3 translations + 3 rotations (2 for linear molecules)
+  3. Diagonalise H_mw; eigenvalues -> omega (rad/s) and wavenumbers (cm^-1)
+
+Usage
+    freqs, omega, modes = vib_freq(atoms)
 """
 
 import numpy as np
 from ase import units
 
 
-def gradient(atoms, coords):
-    atoms.set_positions(coords)
-    return -atoms.get_forces()
-
-def hessian(atoms, step=0.005):
-    x0 = atoms.get_positions().copy() #(n, 3)
-    n_coords = x0.size
-    moves = np.eye(n_coords).reshape(n_coords, *x0.shape) * step #	(3n, n, 3)
-    H = []
-
-    for d in moves:
-        diff = gradient(atoms, x0 + d) - gradient(atoms, x0 - d)
-        H.append(diff.ravel() / (2 * step))  #(3n,)
-
-    atoms.set_positions(x0) # restore the coords
-    H = np.array(H) #(3n, 3n)
-    return (H + H.T) / 2
-
-def mass_weight(H, masses):
-    m = np.repeat(masses, 3)      # (3n,) [m₀, m₀, m₀, m₁, m₁, m₁, ...]
-    H_mw = H / np.sqrt(np.outer(m, m))
-    return H_mw
+def mass_weighted_hessian(atoms):
+    """atoms.calc must be loaded with InferenceSettings(predict_untrained_hessian={"omol"})."""
+    H = atoms.calc.get_property("hessian", atoms).reshape(3 * len(atoms), -1)   # (3n, 3n) eV/Å²
+    m = np.repeat(atoms.get_masses(), 3)      # (3n,) [m₀, m₀, m₀, m₁, m₁, m₁, ...]
+    return H / np.sqrt(np.outer(m, m))        # eV/(Å²·amu)
 
 def n_trans_rot(atoms):
     I = atoms.get_moments_of_inertia() # shape (3,)
@@ -48,17 +33,13 @@ def omega_to_wavenumber(omega):
     """omega, rad/s  ->  wavenumbers, cm⁻¹."""
     return omega / (2 * np.pi * units._c * 100)
 
-def vib_freq(H_mw, masses, n_remove):
-    eigvals, eigvecs = np.linalg.eigh(H_mw)          # (3n,) and (3n, 3n); column k = mode k
+def vib_freq(atoms):
+    eigvals, eigvecs = np.linalg.eigh(mass_weighted_hessian(atoms)) 
 
-    keep = np.argsort(np.abs(eigvals))[n_remove:]    # remove rot & trs mode
-    keep = keep[np.argsort(eigvals[keep])]           # sort by signed value
-    freqs = eigval_to_wavenumber(eigvals[keep])
+    keep = np.argsort(np.abs(eigvals))[n_trans_rot(atoms):]   # remove rot & trs mode
+    keep = keep[np.argsort(eigvals[keep])]                     # sort by signed value
 
-    modes = eigvecs[:, keep].T.reshape(-1, len(masses), 3) #(n_modes, n, 3)
-    return freqs, modes
-
-def run_vibfreq(atoms):
-    masses = atoms.get_masses()
-    H_mw = mass_weight(hessian(atoms), masses)
-    return vib_freq(H_mw, masses, n_trans_rot(atoms))
+    omega = eigval_to_omega(eigvals[keep])           # (n_modes,) rad/s
+    #freqs = omega_to_wavenumber(omega)               # (n_modes,) cm⁻¹
+    modes = eigvecs[:, keep].T.reshape(-1, len(atoms), 3) #(n_modes, n, 3)
+    return omega, modes
