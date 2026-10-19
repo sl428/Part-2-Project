@@ -10,28 +10,22 @@ from ase import units
 HBAR = units._hbar * units.J * units.second      # ħ in eV·(ASE time)
 
 
-def wigner_sample(atoms, omega, modes, n_samples, seed=None):
-    """
-    omega : (n_modes,)       rad/s, from vib_freq
-    modes : (n_modes, n, 3)  mass-weighted orthonormal eigenvectors, from vib_freq
-
-    Returns R : (n_samples, n, 3) sampled positions, Å
-    """
-
+def sigma_q(omega):
     w = omega / units.second                     # rad/s -> 1/(ASE time)
-    sigma_q = np.sqrt(HBAR / (2 * w))           
+    return np.sqrt(HBAR / (2 * w))
 
+def sample_q(omega, n_samples, seed=None):
     rng = np.random.default_rng(seed)
-    q = rng.standard_normal((n_samples, w.size)) * sigma_q     # (n_samples, n_modes)
+    return rng.standard_normal((n_samples, omega.size)) * sigma_q(omega) #(n_samples, n_modes)
 
+def q_to_R(atoms, modes, q):
     sqrt_m = np.sqrt(atoms.get_masses())[None, :, None]
-    return atoms.get_positions()[None] + np.einsum("si,iaj->saj", q, modes) / sqrt_m #(n_samples, n_atoms, 3)
-
+    return atoms.get_positions()[None] + np.einsum("si,iaj->saj", q, modes) / sqrt_m #(n_samples, n, 3), Å
 
 def to_frames(atoms, R):
     frames = []
     for r in R:
-        a = atoms.copy()                        
+        a = atoms.copy()
         a.set_positions(r)
         frames.append(a)
     return frames
