@@ -9,22 +9,23 @@ import numpy as np
 
 from optimize import minimize_gd
 from vibfreq import vib_freq
-from sampling import sigma_q, sigma_p, sample_gaussian, q_to_R, p_to_P, to_frames
+from sampling import sigma_q, sigma_p, sample_qp, to_cartesian, to_frames
 from sampling_plot import plot_sampling
 
 
-filename = 'nitrogen.xyz'
+filename = 'furan.xyz'
 charge = 0
 spin = 1
 model = "/u/ajmk/applications/omol25/esen_sm_conserving_all.pt"
 n_samples = 1000
 seed = 0
-momenta = False     
-debug = True        
+cutoff = 2.0
+debug = True  
 
 def main():
     predictor = load_predict_unit(model, device='cpu')
     atoms = read(filename)
+    atoms.info.clear()
     atoms.info.update({"charge": charge, "spin": spin})
     atoms.calc = FAIRChemCalculator(predictor, task_name="omol")
 
@@ -38,22 +39,14 @@ def main():
 
     omega, modes = vib_freq(atoms)
 
-    rng = np.random.default_rng(seed)       
-    q = sample_gaussian(sigma_q(omega), n_samples, rng)      # (n_samples, n_modes)
-    R = q_to_R(atoms, modes, q)                              # (n_samples, n_atoms, 3)
-    if momenta:
-        p = sample_gaussian(sigma_p(omega), n_samples, rng)
-        P = p_to_P(atoms, modes, p)
-    else:
-        P = None
-
+    rng = np.random.default_rng(seed)
+    q, p = sample_qp(omega, n_samples, rng, cutoff)
+    R, P = to_cartesian(atoms, modes, q, p)
     write(f"{name}_sampling_geo.extxyz", to_frames(atoms, R, P))
 
     if debug:
-        plot_sampling(omega, q, sigma_q(omega), "q", f"{name}_check_q.png")
-        if momenta:
-            plot_sampling(omega, p, sigma_p(omega), "p", f"{name}_check_p.png")
-
+        plot_sampling(omega, q, sigma_q(omega), cutoff, "q", f"{name}_check_q.png")
+        plot_sampling(omega, p, sigma_p(omega), cutoff, "p", f"{name}_check_p.png")
 
 if __name__ == "__main__":
     main()

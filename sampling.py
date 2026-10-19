@@ -1,14 +1,14 @@
 """
 sampling.py - Wigner sampling of positions and momenta from normal modes.
 
-Everything is in ASE units (eV, Å, amu, ASE time)。
+Everything is in ASE units (eV, Å, amu, ASE time)
 """
 
 import numpy as np
 from ase import units
+from scipy.stats import truncnorm
 
 HBAR = units._hbar * units.J * units.second      # ħ in eV·(ASE time)
-
 
 def sigma_q(omega):
     w = omega / units.second                     # rad/s -> 1/(ASE time)
@@ -18,27 +18,21 @@ def sigma_p(omega):
     w = omega / units.second
     return np.sqrt(HBAR * w / 2)
 
-def sample_gaussian(sigma, n_samples, rng):
-    """(n_samples, n_modes) Gaussian samples with per-mode width sigma.
-    Pass the SAME rng for q and p so they are independent."""
-    return rng.standard_normal((n_samples, sigma.size)) * sigma
+def sample_qp(omega, n_samples, rng, cutoff):
+    xi = truncnorm.rvs(-cutoff, cutoff, size=(2, n_samples, omega.size), random_state=rng)
+    return xi[0] * sigma_q(omega), xi[1] * sigma_p(omega)
 
-def q_to_R(atoms, modes, q):
-    """Positions, (n_samples, n_atoms, 3), Å."""
+def to_cartesian(atoms, modes, q, p):
     sqrt_m = np.sqrt(atoms.get_masses())[None, :, None]
-    return atoms.get_positions()[None] + np.einsum("si,iaj->saj", q, modes) / sqrt_m
+    R = atoms.get_positions()[None] + np.einsum("si,iaj->saj", q, modes) / sqrt_m
+    P = np.einsum("si,iaj->saj", p, modes) * sqrt_m
+    return R, P
 
-def p_to_P(atoms, modes, p):
-    """Momenta, (n_samples, n_atoms, 3), amu·Å/(ASE time)."""
-    sqrt_m = np.sqrt(atoms.get_masses())[None, :, None]
-    return np.einsum("si,iaj->saj", p, modes) * sqrt_m
-
-def to_frames(atoms, R, P=None):
+def to_frames(atoms, R, P):
     frames = []
     for i, r in enumerate(R):
         a = atoms.copy()                      
         a.set_positions(r)
-        if P is not None:
-            a.set_momenta(P[i])
+        a.set_momenta(P[i])
         frames.append(a)
     return frames
