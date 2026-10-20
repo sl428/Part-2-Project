@@ -10,17 +10,23 @@ from scipy.stats import truncnorm
 
 HBAR = units._hbar * units.J * units.second      # ħ in eV·(ASE time)
 
-def sigma_q(omega):
-    w = omega / units.second                     # rad/s -> 1/(ASE time)
-    return np.sqrt(HBAR / (2 * w))
-
-def sigma_p(omega):
+def thermal_factor(omega, temperature):
+    if temperature == 0:
+        return np.ones_like(omega)
     w = omega / units.second
-    return np.sqrt(HBAR * w / 2)
+    return 1 / np.tanh(HBAR * w / (2 * units.kB * temperature))
 
-def sample_qp(omega, n_samples, rng, cutoff):
+def sigma_q(omega, temperature):
+    w = omega / units.second                     # rad/s -> 1/(ASE time)
+    return np.sqrt(HBAR / (2 * w) * thermal_factor(omega, temperature))
+
+def sigma_p(omega, temperature):
+    w = omega / units.second
+    return np.sqrt(HBAR * w / 2 * thermal_factor(omega, temperature))
+
+def sample_qp(omega, n_samples, rng, cutoff, temperature):
     xi = truncnorm.rvs(-cutoff, cutoff, size=(2, n_samples, omega.size), random_state=rng)
-    return xi[0] * sigma_q(omega), xi[1] * sigma_p(omega)
+    return xi[0] * sigma_q(omega, temperature), xi[1] * sigma_p(omega, temperature)
 
 def to_cartesian(atoms, modes, q, p):
     sqrt_m = np.sqrt(atoms.get_masses())[None, :, None]
