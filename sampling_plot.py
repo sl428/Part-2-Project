@@ -8,13 +8,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.stats import truncnorm
 
 from vibfreq import omega_to_wavenumber
 
 UNITS = {"q": "amu$^{1/2}$·Å", "p": "amu$^{1/2}$·Å / ASE time"}
 
-def plot_sampling(omega, x, sigma, cutoff, label, out="sampling_check.png", bins=60):
+def plot_sampling(omega, x, sigma, label, out="sampling_check.png", bins=60):
     """
     omega  : (n_modes,)            rad/s
     x      : (n_samples, n_modes)  sampled q or p
@@ -48,22 +47,21 @@ def plot_sampling(omega, x, sigma, cutoff, label, out="sampling_check.png", bins
 
         s = sigma[i]
         t = np.linspace(-4 * s, 4 * s, 200)      # each mode on its own scale
-        pdf = truncnorm.pdf(t, -cutoff, cutoff, scale=s)
-        s_theory = truncnorm.std(-cutoff, cutoff) * s
+        pdf = np.exp(-t**2 / (2 * s**2)) / np.sqrt(2 * np.pi * s**2)
 
         ax.hist(x[:, i], bins=bins, range=(-4 * s, 4 * s), density=True,
                 color="#2a78d6", edgecolor="#fcfcfb", linewidth=0.4, label="samples")
         ax.plot(t, pdf, color="#0b0b0b", linewidth=1.3, label="theory")
         if legend_ax is None:
             legend_ax = ax
-        ax.set_title(f"{cm[i]:.0f} cm$^{{-1}}$   σ = {std[i]:.3g} (theory {s_theory:.3g})",
+        ax.set_title(f"{cm[i]:.0f} cm$^{{-1}}$   σ = {std[i]:.3g} (theory {s:.3g})",
                      fontsize=8, color="#52514e")
         ax.ticklabel_format(axis="x", style="sci", scilimits=(-2, 3))
         ax.xaxis.get_offset_text().set_fontsize(7)
 
     if legend_ax is not None:
         legend_ax.legend(loc="upper left", frameon=False, fontsize=7)
-    fig.suptitle(f"Truncated Wigner sampling (±{cutoff:g}σ): {label} per mode ({len(x)} samples)",
+    fig.suptitle(f"Wigner sampling: {label} per mode ({len(x)} samples)",
                  x=0.02, ha="left", fontsize=11)
     fig.supxlabel(f"{label}  [{UNITS.get(label, '')}]", fontsize=10, color="#52514e")
     fig.tight_layout(rect=(0, 0, 1, 0.96))

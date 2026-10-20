@@ -53,8 +53,8 @@ def main():
     plot_energy(E_tot, f"{name}_energy.png")
 
     if debug:
-        plot_sampling(omega, q, sigma_q(omega, temperature), cutoff, "q", f"{name}_check_q.png")
-        plot_sampling(omega, p, sigma_p(omega, temperature), cutoff, "p", f"{name}_check_p.png")
+        plot_sampling(omega, q, sigma_q(omega, temperature), "q", f"{name}_check_q.png")
+        plot_sampling(omega, p, sigma_p(omega, temperature), "p", f"{name}_check_p.png")
 
 if __name__ == "__main__":
     main()
