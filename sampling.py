@@ -14,19 +14,25 @@ def thermal_factor(omega, temperature):
     if temperature == 0:
         return np.ones_like(omega)
     w = omega / units.second
-    return 1 / np.tanh(HBAR * w / (2 * units.kB * temperature))
+    return 1 / np.tanh(HBAR * w / (2 * units.kB * temperature))   # ħω [eV] / k_B·T [eV] -> unitless
 
-def sigma_q(omega, temperature):
-    w = omega / units.second                     # rad/s -> 1/(ASE time)
-    return np.sqrt(HBAR / (2 * w) * thermal_factor(omega, temperature))
-
-def sigma_p(omega, temperature):
+def width_factor(omega, temperature, extra_energy):
     w = omega / units.second
-    return np.sqrt(HBAR * w / 2 * thermal_factor(omega, temperature))
+    eps = extra_energy / np.count_nonzero(omega > 0)              # eV per mode
+    return thermal_factor(omega, temperature) + 2 * eps / (HBAR * w)   # eps [eV] / ħω [eV] -> unitless
 
-def sample_qp(omega, n_samples, rng, cutoff, temperature):
+def sigma_q(omega, temperature, extra_energy):
+    w = omega / units.second                     # rad/s -> 1/(ASE time)
+    return np.sqrt(HBAR / (2 * w) * width_factor(omega, temperature, extra_energy))
+
+def sigma_p(omega, temperature, extra_energy):
+    w = omega / units.second
+    return np.sqrt(HBAR * w / 2 * width_factor(omega, temperature, extra_energy))
+
+def sample_qp(omega, n_samples, rng, cutoff, temperature, extra_energy):
     xi = truncnorm.rvs(-cutoff, cutoff, size=(2, n_samples, omega.size), random_state=rng)
-    return xi[0] * sigma_q(omega, temperature), xi[1] * sigma_p(omega, temperature)
+    return (xi[0] * sigma_q(omega, temperature, extra_energy),
+            xi[1] * sigma_p(omega, temperature, extra_energy))
 
 def to_cartesian(atoms, modes, q, p):
     sqrt_m = np.sqrt(atoms.get_masses())[None, :, None]

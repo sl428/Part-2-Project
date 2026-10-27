@@ -20,9 +20,22 @@ spin = 1
 model = "/u/ajmk/applications/omol25/esen_sm_conserving_all.pt"
 n_samples = 1000
 seed = 0
-cutoff = 2.0
-temperature = 300.0
-debug = True
+cutoff = np.inf
+temperature = 0
+extra_energy = 5.0                # eV, total added energy, split equally over all modes
+debug = False
+
+def sample_energies(atoms, omega, modes, calc, E0, tag, extra_energy):
+    rng = np.random.default_rng(seed)
+    q, p = sample_qp(omega, n_samples, rng, cutoff, temperature, extra_energy)
+    R, P = to_cartesian(atoms, modes, q, p)
+    frames = to_frames(atoms, R, P)
+    write(f"{tag}_sampling_geo.extxyz", frames)
+
+    E_pot, E_kin, E_tot = total_energies(frames, calc)
+    np.savez(f"{tag}_energy.npz", E0=E0, E_pot=E_pot, E_kin=E_kin, E_tot=E_tot,
+             omega=omega, q=q, p=p)
+    return q, p, E_tot
 
 def main():
     predictor = load_predict_unit(model, device='cpu')
@@ -42,19 +55,23 @@ def main():
 
     omega, modes = vib_freq(atoms)
 
-    rng = np.random.default_rng(seed)
-    q, p = sample_qp(omega, n_samples, rng, cutoff, temperature)
-    R, P = to_cartesian(atoms, modes, q, p)
-    frames = to_frames(atoms, R, P)
-    write(f"{name}_sampling_geo.extxyz", frames)
+    calc = FAIRChemCalculator(predictor, task_name="omol")
+    tag = f"{name}_T{temperature:g}K_E{extra_energy:g}eV"
+    q, p, E_tot = sample_energies(atoms, omega, modes, calc, energy, tag, extra_energy)
+    plot_energy(E_tot, energy, f"{tag}_energy.png")
 
-    E_pot, E_kin, E_tot = total_energies(frames, FAIRChemCalculator(predictor, task_name="omol"))
-    np.savez(f"{name}_energy.npz", E_pot=E_pot, E_kin=E_kin, E_tot=E_tot)
-    plot_energy(E_tot, f"{name}_energy.png")
+    base_tag = f"{name}_T{temperature:g}K_E0eV"
+    _, _, E_base = sample_energies(atoms, omega, modes, calc, energy, base_tag, 0.0)
+
+    before = (E_base - energy).mean()
+    after = (E_tot - energy).mean()
+    print(f"<E_tot - E0>  before (E = 0 eV):   {before:.4f} eV")
+    print(f"<E_tot - E0>  after  (E = {extra_energy:g} eV):   {after:.4f} eV")
+    print(f"difference:   {after - before:.4f} eV")
 
     if debug:
-        plot_sampling(omega, q, sigma_q(omega, temperature), "q", f"{name}_check_q.png")
-        plot_sampling(omega, p, sigma_p(omega, temperature), "p", f"{name}_check_p.png")
+        plot_sampling(omega, q, sigma_q(omega, temperature, extra_energy), "q", f"{tag}_check_q.png")
+        plot_sampling(omega, p, sigma_p(omega, temperature, extra_energy), "p", f"{tag}_check_p.png")
 
 if __name__ == "__main__":
     main()
